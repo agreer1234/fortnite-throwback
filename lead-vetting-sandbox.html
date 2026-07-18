@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+<title>Lead Vetting Sandbox</title>
+<style>
+  :root {
+    --bg: #f4f6f7;
+    --surface: #ffffff;
+    --surface-2: #eef1f3;
+    --ink: #1b2429;
+    --muted: #5c6c75;
+    --faint: #8a979f;
+    --border: #dbe2e6;
+    --accent: #0e7c6b;
+    --accent-soft: #e0efec;
+    --good: #1d7a4a;
+    --good-soft: #e2f1e8;
+    --warn: #9a6a00;
+    --warn-soft: #f6ecd6;
+    --crit: #b23a2c;
+    --crit-soft: #f8e5e1;
+    --shadow: 0 1px 2px rgba(27, 36, 41, 0.06), 0 4px 14px rgba(27, 36, 41, 0.05);
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #11181c;
+      --surface: #192328;
+      --surface-2: #202c32;
+      --ink: #e6edf0;
+      --muted: #93a4ad;
+      --faint: #6c7d86;
+      --border: #2b3940;
+      --accent: #3cb9a2;
+      --accent-soft: #163831;
+      --good: #4cc583;
+      --good-soft: #16321f;
+      --warn: #e3a63a;
+      --warn-soft: #3a2f14;
+      --crit: #e57562;
+      --crit-soft: #3d201b;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f4f6f7; --surface: #ffffff; --surface-2: #eef1f3; --ink: #1b2429;
+    --muted: #5c6c75; --faint: #8a979f; --border: #dbe2e6;
+    --accent: #0e7c6b; --accent-soft: #e0efec;
+    --good: #1d7a4a; --good-soft: #e2f1e8;
+    --warn: #9a6a00; --warn-soft: #f6ecd6;
+    --crit: #b23a2c; --crit-soft: #f8e5e1;
+    --shadow: 0 1px 2px rgba(27,36,41,.06), 0 4px 14px rgba(27,36,41,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #11181c; --surface: #192328; --surface-2: #202c32; --ink: #e6edf0;
+    --muted: #93a4ad; --faint: #6c7d86; --border: #2b3940;
+    --accent: #3cb9a2; --accent-soft: #163831;
+    --good: #4cc583; --good-soft: #16321f;
+    --warn: #e3a63a; --warn-soft: #3a2f14;
+    --crit: #e57562; --crit-soft: #3d201b;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 18px rgba(0,0,0,.3);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 14.5px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; cursor: pointer; }
+  :is(button, input, [tabindex]):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 20px 56px; }
+
+  /* ---------- header ---------- */
+  header.top {
+    display: flex; flex-wrap: wrap; gap: 16px;
+    align-items: flex-end; justify-content: space-between;
+    padding: 8px 2px 18px;
+  }
+  .eyebrow {
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 6px;
+  }
+  h1 { margin: 0; font-size: 24px; font-weight: 650; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { margin: 4px 0 0; color: var(--muted); max-width: 62ch; }
+
+  .threshold {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 14px; box-shadow: var(--shadow); min-width: 250px;
+  }
+  .threshold label {
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-size: 12px; color: var(--muted); margin-bottom: 4px;
+  }
+  .threshold output { font-family: var(--mono); font-size: 15px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .threshold input[type="range"] { width: 100%; accent-color: var(--accent); }
+  .threshold .hint { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+
+  /* ---------- stepper ---------- */
+  .stepper {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+    margin: 4px 0 18px;
+  }
+  .step {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; position: relative;
+  }
+  .step .k {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--faint);
+  }
+  .step .t { font-weight: 600; font-size: 13.5px; margin-top: 2px; }
+  .step .d { font-size: 12px; color: var(--muted); }
+  .step.active { border-color: var(--accent); }
+  .step.active .k { color: var(--accent); }
+  .step.done .k::after { content: " ✓"; color: var(--good); letter-spacing: 0; }
+
+  /* ---------- layout ---------- */
+  .grid { display: grid; grid-template-columns: 300px 1fr; gap: 16px; align-items: start; }
+  @media (max-width: 920px) {
+    .grid { grid-template-columns: 1fr; }
+    .stepper { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); overflow: hidden;
+  }
+  .panel > h2 {
+    margin: 0; padding: 12px 16px; font-size: 12px; font-weight: 600;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px;
+  }
+  .panel > h2 .src {
+    margin-left: auto; font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em;
+    color: var(--accent); background: var(--accent-soft); border-radius: 99px;
+    padding: 2px 8px; text-transform: none;
+  }
+  .panel .body { padding: 14px 16px; }
+
+  /* ---------- lead queue ---------- */
+  .lead-btn {
+    display: block; width: 100%; text-align: left; background: none;
+    border: 0; border-bottom: 1px solid var(--border); padding: 12px 16px; color: inherit;
+  }
+  .lead-btn:last-child { border-bottom: 0; }
+  .lead-btn:hover { background: var(--surface-2); }
+  .lead-btn[aria-current="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .lead-btn .name { font-weight: 600; }
+  .lead-btn .meta { font-size: 12px; color: var(--muted); font-family: var(--mono); word-break: break-all; }
+  .lead-btn .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 600; border-radius: 99px; padding: 2px 9px;
+    background: var(--surface-2); color: var(--muted); white-space: nowrap;
+  }
+  .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .chip.cleared  { background: var(--good-soft); color: var(--good); }
+  .chip.cleared::before { background: var(--good); }
+  .chip.review   { background: var(--warn-soft); color: var(--warn); }
+  .chip.review::before { background: var(--warn); }
+  .chip.created  { background: var(--accent-soft); color: var(--accent); }
+  .chip.created::before { background: var(--accent); }
+  .chip.disqualified { background: var(--crit-soft); color: var(--crit); }
+  .chip.disqualified::before { background: var(--crit); }
+  .chip.vetting::before { background: var(--warn); }
+
+  /* ---------- record card ---------- */
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px 18px; }
+  .field .k { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--faint); }
+  .field .v { font-size: 14px; }
+  .field .v .mono { font-family: var(--mono); font-size: 13px; word-break: break-all; }
+  .field { min-width: 0; }
+
+  .btn {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 9px 16px; font-weight: 600; font-size: 14px;
+  }
+  :root[data-theme="dark"] .btn, body .btn { color: #fff; }
+  .btn:hover { filter: brightness(1.08); }
+  .btn:disabled { opacity: 0.45; cursor: default; filter: none; }
+  .btn.ghost {
+    background: none; color: var(--ink); border: 1px solid var(--border);
+  }
+  .btn.ghost:hover { background: var(--surface-2); }
+  .btn.small { padding: 6px 12px; font-size: 13px; }
+  .btn.danger { background: none; border: 1px solid var(--border); color: var(--crit); }
+  .btn.danger:hover { background: var(--crit-soft); }
+
+  /* ---------- vetting console ---------- */
+  .console { display: flex; flex-direction: column; gap: 8px; }
+  .check {
+    display: grid; grid-template-columns: 92px 1fr auto; gap: 10px; align-items: start;
+    padding: 9px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface-2);
+    animation: slidein 0.35s ease both;
+  }
+  @keyframes slidein { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) {
+    .check { animation: none; }
+    .meter .fill { transition: none !important; }
+  }
+  .check .tag {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.03em;
+    color: var(--muted); background: var(--surface); border: 1px solid var(--border);
+    border-radius: 5px; padding: 2px 6px; text-align: center;
+  }
+  .check .q { font-family: var(--mono); font-size: 12px; color: var(--faint); word-break: break-word; }
+  .check .f { font-size: 13px; margin-top: 1px; }
+  .check .sig {
+    font-family: var(--mono); font-size: 11px; white-space: nowrap; text-align: right;
+    color: var(--faint); display: flex; flex-direction: column; gap: 2px; align-items: flex-end;
+  }
+  .sig b { font-weight: 600; }
+  .sig .risk-pt { color: var(--crit); }
+  .sig .id-pt { color: var(--accent); }
+  .check.pending { opacity: 0.55; }
+  .check.pending .f { color: var(--faint); font-style: italic; }
+
+  /* ---------- meters ---------- */
+  .meters { display: grid; gap: 14px; margin-top: 4px; }
+  .meter .label {
+    display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px;
+  }
+  .meter .label .n { font-size: 13px; font-weight: 600; }
+  .meter .label .why { font-size: 11.5px; color: var(--faint); }
+  .meter .val { font-family: var(--mono); font-size: 16px; font-variant-numeric: tabular-nums; }
+  .meter .track {
+    position: relative; height: 10px; border-radius: 5px; background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+  .meter .fill {
+    position: absolute; inset: 0 auto 0 0; width: 0%; border-radius: 5px 3px 3px 5px;
+    transition: width 0.7s ease;
+  }
+  .meter .tick {
+    position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink);
+    opacity: 0.7; border-radius: 1px;
+  }
+  .meter .tick::after {
+    content: "threshold"; position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 9.5px; color: var(--muted); letter-spacing: 0.04em;
+  }
+
+  /* ---------- outcome ---------- */
+  .verdict {
+    border-radius: 10px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start;
+    border: 1px solid var(--border);
+  }
+  .verdict .glyph { font-size: 20px; line-height: 1.2; }
+  .verdict.ok { background: var(--good-soft); border-color: color-mix(in oklab, var(--good) 35%, var(--border)); }
+  .verdict.hold { background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 35%, var(--border)); }
+  .verdict .t { font-weight: 650; }
+  .verdict .d { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .verdict .d strong { color: var(--ink); }
+
+  .note {
+    margin-top: 10px; font-size: 12.5px; color: var(--muted);
+    border-left: 3px solid var(--border); padding: 2px 0 2px 10px;
+  }
+
+  /* ---------- bottom panels ---------- */
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 920px) { .bottom { grid-template-columns: 1fr; } }
+
+  .queue-item { border-bottom: 1px solid var(--border); padding: 12px 16px; }
+  .queue-item:last-child { border-bottom: 0; }
+  .queue-item .row1 { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+  .queue-item .why { font-size: 12.5px; color: var(--muted); margin: 4px 0 8px; }
+  .queue-item .links { font-size: 12px; font-family: var(--mono); }
+  .queue-item .links a { color: var(--accent); text-decoration: none; }
+  .queue-item .links a:hover { text-decoration: underline; }
+  .queue-item .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .score-pill {
+    font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+    border-radius: 6px; padding: 2px 7px; white-space: nowrap;
+  }
+  .score-pill.hi { background: var(--crit-soft); color: var(--crit); }
+  .score-pill.mid { background: var(--warn-soft); color: var(--warn); }
+  .score-pill.lo { background: var(--good-soft); color: var(--good); }
+
+  .ph-account { border-bottom: 1px solid var(--border); padding: 12px 16px; }
+  .ph-account:last-child { border-bottom: 0; }
+  .ph-account .co { font-weight: 650; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .ph-account .owner { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  .tasks { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
+  .tasks li {
+    display: flex; gap: 8px; align-items: baseline; font-size: 13px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 10px;
+  }
+  .tasks li .due { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); white-space: nowrap; }
+  .tasks li::before { content: "☐"; color: var(--accent); }
+
+  .empty { padding: 22px 16px; color: var(--faint); font-size: 13px; text-align: center; }
+
+  /* ---------- footnote ---------- */
+  .foot { margin-top: 22px; }
+  .foot table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .foot th, .foot td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .foot th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); font-weight: 600; }
+  .foot td.mono { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .foot .scroll { overflow-x: auto; }
+  .disclaimer { margin-top: 12px; font-size: 12px; color: var(--faint); max-width: 78ch; }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Sandbox · mock data only</p>
+      <h1>Lead vetting pipeline</h1>
+      <p class="sub">Salesforce lead → public-web affiliation check → risk-gated hand-off to Planhat.
+        Every search result below is fabricated. Pick a lead, run the vetting, drag the threshold.</p>
+    </div>
+    <div class="threshold">
+      <label for="thr">Affiliation risk threshold <output id="thr-out">60</output></label>
+      <input type="range" id="thr" min="40" max="90" value="60" step="5" />
+      <div class="hint">At or above this score, a human reviews before Planhat is touched.</div>
+    </div>
+  </header>
+
+  <div class="stepper" id="stepper">
+    <div class="step" data-step="1"><div class="k">Stage 1 · Salesforce</div><div class="t">Pull lead</div><div class="d">Hosted MCP Server</div></div>
+    <div class="step" data-step="2"><div class="k">Stage 2 · Vetting</div><div class="t">Public-web checks</div><div class="d">Search + scoring agent</div></div>
+    <div class="step" data-step="3"><div class="k">Stage 3 · Gate</div><div class="t">Route on risk</div><div class="d">Auto-clear or human review</div></div>
+    <div class="step" data-step="4"><div class="k">Stage 4 · Planhat</div><div class="t">Create account + tasks</div><div class="d">Planhat MCP Server</div></div>
+  </div>
+
+  <div class="grid">
+    <aside class="panel">
+      <h2>Incoming leads <span class="src">Salesforce</span></h2>
+      <div id="lead-list"></div>
+    </aside>
+
+    <main style="display: grid; gap: 16px;">
+      <section class="panel" id="record-panel">
+        <h2>Lead record <span class="src">sf.query</span></h2>
+        <div class="body">
+          <div class="fields" id="record-fields"></div>
+          <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
+            <button class="btn" id="run-btn">Run vetting</button>
+            <span id="run-hint" style="font-size: 12.5px; color: var(--faint);"></span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="console-panel" hidden>
+        <h2>Vetting console <span class="src">web.search</span></h2>
+        <div class="body">
+          <div class="console" id="console"></div>
+          <div class="meters" id="meters" hidden style="margin-top: 16px;">
+            <div class="meter">
+              <div class="label">
+                <span class="n">Identity confidence <span class="why">— is this actually our lead?</span></span>
+                <span class="val" id="id-val">0</span>
+              </div>
+              <div class="track"><div class="fill" id="id-fill" style="background: var(--accent);"></div></div>
+            </div>
+            <div class="meter" style="padding-top: 14px;">
+              <div class="label">
+                <span class="n">Affiliation risk <span class="why">— selling or using signals found</span></span>
+                <span class="val" id="risk-val">0</span>
+              </div>
+              <div class="track">
+                <div class="fill" id="risk-fill"></div>
+                <div class="tick" id="risk-tick"></div>
+              </div>
+            </div>
+          </div>
+          <div id="verdict-slot" style="margin-top: 16px;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="bottom">
+    <section class="panel">
+      <h2>Human review queue <span class="src">held before Planhat</span></h2>
+      <div id="queue"><div class="empty">Nothing waiting. Leads land here when risk crosses the threshold or the identity match is shaky.</div></div>
+    </section>
+    <section class="panel">
+      <h2>Planhat — created accounts <span class="src">ph.create</span></h2>
+      <div id="planhat"><div class="empty">No accounts yet. Cleared or approved leads show up here with their action items.</div></div>
+    </section>
+  </div>
+
+  <section class="panel foot">
+    <h2>What each stage maps to in production</h2>
+    <div class="scroll">
+      <table>
+        <tr><th>Sandbox stage</th><th>Real implementation</th><th>Mocked here as</th></tr>
+        <tr><td>Pull lead</td><td>Salesforce Hosted MCP Server — record query, per-user OAuth so sharing rules apply</td><td class="mono">static JSON</td></tr>
+        <tr><td>Public-web checks</td><td>Agent web search: quoted email, name + industry terms, site:linkedin.com, dealer directories, email-domain lookup</td><td class="mono">canned results</td></tr>
+        <tr><td>Scoring</td><td>Skill with your weights — identity confidence scored separately from affiliation risk</td><td class="mono">same rules, fixed inputs</td></tr>
+        <tr><td>Route on risk</td><td>Threshold in the skill; held leads go to a queue (Slack, sheet, or Salesforce field) with evidence links</td><td class="mono">the panel below-left</td></tr>
+        <tr><td>Create account + tasks</td><td>Planhat MCP Server — create company, then tasks for the action items</td><td class="mono">the panel below-right</td></tr>
+      </table>
+    </div>
+    <p class="disclaimer">All four leads, companies, emails, and search hits on this page are invented for the demo.
+      Two honest limits carry over to production: a lead with no public footprint scores clean (the screen catches the
+      careless, not the determined), and a name-only match is never treated as identity — that is what the separate
+      confidence score is for.</p>
+  </section>
+</div>
+
+<script>
+  const LEADS = [
+    {
+      id: "sarah",
+      name: "Sarah Okafor",
+      title: "Director of Operations",
+      company: "Meridian Freight Group",
+      email: "sarah.okafor@meridianfreight.example",
+      source: "Webinar signup",
+      checks: [
+        { tag: "domain", q: "whois + site lookup: meridianfreight.example", f: "Meridian Freight Group — regional logistics carrier. No overlap with our product category.", id: 35, risk: 0 },
+        { tag: "google", q: "\"sarah.okafor@meridianfreight.example\"", f: "2 hits: company staff page and a logistics conference speaker list. Both match the lead record.", id: 30, risk: 0 },
+        { tag: "linkedin", q: "site:linkedin.com \"Sarah Okafor\" Meridian", f: "Public headline: “Director of Operations at Meridian Freight Group”. Matches lead company and title.", id: 25, risk: 0 },
+        { tag: "repfinder", q: "directory search: Okafor / meridianfreight.example", f: "No entries.", id: 0, risk: 0 },
+        { tag: "google", q: "\"Sarah Okafor\" (reseller OR dealer OR rep OR distributor)", f: "No hits combining the name with selling terms.", id: 0, risk: 5 }
+      ],
+      caveat: null
+    },
+    {
+      id: "marcus",
+      name: "Marcus Reyes",
+      title: "Owner",
+      company: "MR Sales Group (self-reported)",
+      email: "mreyes.sales@gmail.example",
+      source: "Contact form",
+      checks: [
+        { tag: "domain", q: "lookup: gmail.example", f: "Consumer domain — no company signal either way.", id: 0, risk: 0 },
+        { tag: "google", q: "\"mreyes.sales@gmail.example\"", f: "Email appears verbatim in a public dealer-directory listing: “Territory Rep — Southwest, sporting goods”.", id: 40, risk: 45 },
+        { tag: "repfinder", q: "directory search: Marcus Reyes", f: "Active rep profile matching name and email; line card lists three competing brands.", id: 25, risk: 30 },
+        { tag: "linkedin", q: "site:linkedin.com \"Marcus Reyes\" rep", f: "Public headline: “Independent Manufacturer’s Rep”.", id: 20, risk: 13 }
+      ],
+      caveat: null
+    },
+    {
+      id: "john",
+      name: "John Smith",
+      title: "—",
+      company: "— (not provided)",
+      email: "jsmith84@gmail.example",
+      source: "Trade-show badge scan",
+      checks: [
+        { tag: "domain", q: "lookup: gmail.example", f: "Consumer domain — no company signal either way.", id: 0, risk: 0 },
+        { tag: "google", q: "\"jsmith84@gmail.example\"", f: "No hits for the exact email.", id: 0, risk: 0 },
+        { tag: "google", q: "\"John Smith\" (dealer OR distributor OR rep)", f: "A “John Smith” appears on an out-of-state distributor roster. Name-only match — no email, company, or location tie to our lead.", id: 10, risk: 40 },
+        { tag: "linkedin", q: "site:linkedin.com \"John Smith\"", f: "1,400+ public profiles under this name; none confirmable as the lead.", id: 8, risk: 0 },
+        { tag: "repfinder", q: "directory search: J. Smith", f: "Two entries under “J. Smith” — identity cannot be confirmed from public data.", id: 10, risk: 15 }
+      ],
+      caveat: "High signal on a weak identity match. The risky “John Smith” may be a different person — that is exactly why confidence is scored separately."
+    },
+    {
+      id: "dana",
+      name: "Dana Whitfield",
+      title: "Principal",
+      company: "Whitfield Consulting (self-reported)",
+      email: "dwhit@proton.example",
+      source: "Customer referral",
+      checks: [
+        { tag: "domain", q: "lookup: proton.example", f: "Private consumer domain — no company signal.", id: 0, risk: 0 },
+        { tag: "google", q: "\"dwhit@proton.example\"", f: "No hits for the exact email.", id: 0, risk: 0 },
+        { tag: "google", q: "\"Dana Whitfield\" (reseller OR dealer OR rep)", f: "No hits combining the name with selling terms.", id: 5, risk: 0 },
+        { tag: "linkedin", q: "site:linkedin.com \"Dana Whitfield\"", f: "No public profile found.", id: 5, risk: 0 },
+        { tag: "repfinder", q: "directory search: Whitfield", f: "No entries.", id: 5, risk: 5 }
+      ],
+      caveat: "Zero public footprint. Scores clean, but this screen catches the careless, not the determined — flagged low-visibility so the CSM verifies company details on the kickoff call."
+    }
+  ];
+
+  const TASKS = [
+    { t: "Kickoff call with CSM", due: "due +3d" },
+    { t: "Send onboarding packet", due: "due +1d" },
+    { t: "Draft success plan from lead notes", due: "due +7d" }
+  ];
+
+  const state = {
+    threshold: 60,
+    selected: LEADS[0].id,
+    status: {},   // leadId -> new | vetting | cleared | review | created | disqualified
+    scores: {},   // leadId -> { id, risk }
+    decided: {},  // leadId -> true once a human approved/disqualified (slider no longer re-routes)
+    running: false
+  };
+  LEADS.forEach(l => (state.status[l.id] = "new"));
+
+  const $ = (id) => document.getElementById(id);
+  const lead = () => LEADS.find(l => l.id === state.selected);
+  const sumScores = (l) => ({
+    id: Math.min(100, l.checks.reduce((a, c) => a + c.id, 0)),
+    risk: Math.min(100, l.checks.reduce((a, c) => a + c.risk, 0))
+  });
+  const band = (risk) => (risk >= state.threshold ? "hi" : risk >= 35 ? "mid" : "lo");
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  const STATUS_LABEL = {
+    new: "new", vetting: "vetting…", cleared: "cleared", review: "review",
+    created: "in Planhat", disqualified: "disqualified"
+  };
+
+  function renderLeads() {
+    $("lead-list").innerHTML = LEADS.map(l => `
+      <button class="lead-btn" data-id="${l.id}" aria-current="${l.id === state.selected}">
+        <div class="row">
+          <span class="name">${esc(l.name)}</span>
+          <span class="chip ${state.status[l.id]}">${STATUS_LABEL[state.status[l.id]]}</span>
+        </div>
+        <div class="meta">${esc(l.email)}</div>
+      </button>`).join("");
+    document.querySelectorAll(".lead-btn").forEach(b =>
+      b.addEventListener("click", () => selectLead(b.dataset.id)));
+  }
+
+  function renderRecord() {
+    const l = lead();
+    $("record-fields").innerHTML = [
+      ["Name", esc(l.name)], ["Title", esc(l.title)], ["Company", esc(l.company)],
+      ["Email", `<span class="mono">${esc(l.email)}</span>`], ["Lead source", esc(l.source)]
+    ].map(([k, v]) => `<div class="field"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
+    const s = state.status[l.id];
+    $("run-btn").textContent = s === "new" ? "Run vetting" : "Re-run vetting";
+    $("run-btn").disabled = state.running;
+    $("run-hint").textContent =
+      s === "created" ? "Already in Planhat — re-running just replays the checks." :
+      s === "review" ? "Waiting in the review queue below." :
+      s === "disqualified" ? "Marked disqualified by reviewer." : "";
+  }
+
+  function setStep(n, done) {
+    document.querySelectorAll(".step").forEach(s => {
+      const k = +s.dataset.step;
+      s.classList.toggle("active", k === n);
+      s.classList.toggle("done", k < n || (done && k <= n));
+    });
+  }
+
+  function selectLead(id) {
+    if (state.running) return;
+    state.selected = id;
+    $("console-panel").hidden = true;
+    $("console").innerHTML = "";
+    $("meters").hidden = true;
+    $("verdict-slot").innerHTML = "";
+    setStep(1, false);
+    renderLeads(); renderRecord();
+  }
+
+  const wait = (ms) =>
+    new Promise(r => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : ms));
+
+  async function runVetting() {
+    if (state.running) return;
+    const l = lead();
+    state.running = true;
+    state.status[l.id] = "vetting";
+    renderLeads(); renderRecord();
+    setStep(2, false);
+
+    const con = $("console");
+    con.innerHTML = "";
+    $("console-panel").hidden = false;
+    $("meters").hidden = true;
+    $("verdict-slot").innerHTML = "";
+
+    for (const c of l.checks) {
+      const row = document.createElement("div");
+      row.className = "check";
+      row.innerHTML = `
+        <span class="tag">${c.tag}</span>
+        <div><div class="q">${esc(c.q)}</div><div class="f">${esc(c.f)}</div></div>
+        <div class="sig">
+          ${c.id ? `<span class="id-pt">identity <b>+${c.id}</b></span>` : ""}
+          ${c.risk ? `<span class="risk-pt">risk <b>+${c.risk}</b></span>` : ""}
+          ${!c.id && !c.risk ? `<span>no signal</span>` : ""}
+        </div>`;
+      con.appendChild(row);
+      await wait(520);
+    }
+
+    const s = sumScores(l);
+    state.scores[l.id] = s;
+    $("meters").hidden = false;
+    await wait(60);
+    animateMeters(s);
+    await wait(750);
+
+    setStep(3, false);
+    route(l, s);
+    state.running = false;
+    renderLeads(); renderRecord(); renderQueue(); renderPlanhat();
+  }
+
+  function animateMeters(s) {
+    $("id-val").textContent = s.id;
+    $("risk-val").textContent = s.risk;
+    $("id-fill").style.width = s.id + "%";
+    const rf = $("risk-fill");
+    rf.style.width = s.risk + "%";
+    rf.style.background = `var(--${band(s.risk) === "hi" ? "crit" : band(s.risk) === "mid" ? "warn" : "good"})`;
+    $("risk-tick").style.left = `calc(${state.threshold}% - 1px)`;
+  }
+
+  function route(l, s) {
+    const overThreshold = s.risk >= state.threshold;
+    const shakyIdentity = s.risk >= 35 && s.id < 50;
+    const slot = $("verdict-slot");
+
+    if (overThreshold || shakyIdentity) {
+      state.status[l.id] = "review";
+      const reason = overThreshold
+        ? `Affiliation risk <strong>${s.risk}</strong> is at or above the threshold (${state.threshold}).`
+        : `Risk <strong>${s.risk}</strong> is under the threshold, but identity confidence is only <strong>${s.id}</strong> — too shaky to act on automatically.`;
+      slot.innerHTML = `
+        <div class="verdict hold">
+          <span class="glyph">⏸</span>
+          <div><div class="t">Held for human review — Planhat untouched</div>
+          <div class="d">${reason} Evidence is queued below with links so the reviewer starts from the trail, not from scratch.</div></div>
+        </div>
+        ${l.caveat ? `<div class="note">${esc(l.caveat)}</div>` : ""}`;
+      setStep(3, true);
+    } else {
+      state.status[l.id] = "created";
+      slot.innerHTML = `
+        <div class="verdict ok">
+          <span class="glyph">✓</span>
+          <div><div class="t">Cleared — Planhat account created</div>
+          <div class="d">Risk <strong>${s.risk}</strong> below threshold with identity confidence <strong>${s.id}</strong>. Company and action items created via the Planhat MCP Server (mocked below).</div></div>
+        </div>
+        ${l.caveat ? `<div class="note">${esc(l.caveat)}</div>` : ""}`;
+      setStep(4, true);
+    }
+  }
+
+  function renderQueue() {
+    const held = LEADS.filter(l => state.status[l.id] === "review");
+    if (!held.length) {
+      $("queue").innerHTML = `<div class="empty">Nothing waiting. Leads land here when risk crosses the threshold or the identity match is shaky.</div>`;
+      return;
+    }
+    $("queue").innerHTML = held.map(l => {
+      const s = state.scores[l.id];
+      const evidence = l.checks.filter(c => c.risk > 0);
+      return `
+        <div class="queue-item">
+          <div class="row1">
+            <strong>${esc(l.name)}</strong>
+            <span>
+              <span class="score-pill ${band(s.risk)}">risk ${s.risk}</span>
+              <span class="score-pill ${s.id >= 50 ? "lo" : "mid"}">identity ${s.id}</span>
+            </span>
+          </div>
+          <div class="why">${l.caveat ? esc(l.caveat) : "Affiliation signals found — reviewer decides."}</div>
+          <div class="links">${evidence.map(c => `<a href="#" onclick="return false">↗ ${c.tag}: ${esc(c.q)}</a>`).join("<br>")}</div>
+          <div class="actions">
+            <button class="btn small" data-approve="${l.id}">Approve → create in Planhat</button>
+            <button class="btn small danger" data-reject="${l.id}">Disqualify</button>
+          </div>
+        </div>`;
+    }).join("");
+    document.querySelectorAll("[data-approve]").forEach(b =>
+      b.addEventListener("click", () => decide(b.dataset.approve, true)));
+    document.querySelectorAll("[data-reject]").forEach(b =>
+      b.addEventListener("click", () => decide(b.dataset.reject, false)));
+  }
+
+  function decide(id, approved) {
+    state.status[id] = approved ? "created" : "disqualified";
+    state.decided[id] = true;
+    renderLeads(); renderRecord(); renderQueue(); renderPlanhat();
+  }
+
+  function renderPlanhat() {
+    const created = LEADS.filter(l => state.status[l.id] === "created");
+    if (!created.length) {
+      $("planhat").innerHTML = `<div class="empty">No accounts yet. Cleared or approved leads show up here with their action items.</div>`;
+      return;
+    }
+    $("planhat").innerHTML = created.map(l => {
+      const wasReviewed = state.scores[l.id] && (state.scores[l.id].risk >= state.threshold || (state.scores[l.id].risk >= 35 && state.scores[l.id].id < 50));
+      const tasks = [...TASKS];
+      if (wasReviewed) tasks.push({ t: "Log vetting override rationale", due: "due +1d" });
+      if (l.caveat && !wasReviewed) tasks.push({ t: "Verify company details on kickoff (low public footprint)", due: "kickoff" });
+      return `
+        <div class="ph-account">
+          <div class="co">${esc(l.company.replace(" (self-reported)", ""))}
+            <span class="chip created">account</span>
+            ${wasReviewed ? `<span class="chip review">human-approved</span>` : ""}
+          </div>
+          <div class="owner">contact: ${esc(l.name)} · ${esc(l.email)}</div>
+          <ul class="tasks">${tasks.map(t => `<li>${esc(t.t)}<span class="due">${t.due}</span></li>`).join("")}</ul>
+        </div>`;
+    }).join("");
+  }
+
+  $("thr").addEventListener("input", (e) => {
+    state.threshold = +e.target.value;
+    $("thr-out").textContent = state.threshold;
+    const s = state.scores[state.selected];
+    if (s && !state.running && !$("meters").hidden) {
+      animateMeters(s);
+      const l = lead();
+      const autoRouted = ["review", "created"].includes(state.status[l.id]) && !state.decided[l.id];
+      if (autoRouted) {
+        route(l, s);
+        renderLeads(); renderQueue(); renderPlanhat();
+      }
+    }
+  });
+
+  $("run-btn").addEventListener("click", runVetting);
+
+  renderLeads(); renderRecord(); setStep(1, false);
+</script>
+
+</body>
+</html>
