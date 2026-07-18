@@ -325,7 +325,8 @@
       <p class="eyebrow">Sandbox · mock data only</p>
       <h1>Lead vetting pipeline</h1>
       <p class="sub">Salesforce lead → public-web affiliation check → risk-gated hand-off to Planhat.
-        Every search result below is fabricated. Pick a lead, run the vetting, drag the threshold.</p>
+        Inputs are deliberately just <strong>first name, last name, and email</strong> — the only fields
+        leads reliably provide. Everything else is derived during vetting. All search results are fabricated.</p>
     </div>
     <div class="threshold">
       <label for="thr">Affiliation risk threshold <output id="thr-out">60</output></label>
@@ -333,6 +334,12 @@
       <div class="hint">At or above this score, a human reviews before Planhat is touched.</div>
     </div>
   </header>
+
+  <div id="nojs-banner" style="border: 1px solid var(--warn); background: var(--warn-soft); color: var(--warn);
+       border-radius: 10px; padding: 10px 14px; margin: 0 0 16px; font-size: 13px; font-weight: 600;">
+    This demo is interactive and needs JavaScript. If the buttons and slider don't respond, you're in a
+    script-blocked preview — download the file and open it in your browser, or use the claude.ai artifact link.
+  </div>
 
   <div class="stepper" id="stepper">
     <div class="step" data-step="1"><div class="k">Stage 1 · Salesforce</div><div class="t">Pull lead</div><div class="d">Hosted MCP Server</div></div>
@@ -344,14 +351,26 @@
   <div class="grid">
     <aside class="panel">
       <h2>Incoming leads <span class="src">Salesforce</span></h2>
-      <div id="lead-list"></div>
+      <div id="lead-list">
+        <button class="lead-btn" aria-current="true"><div class="row"><span class="name">Sarah Okafor</span><span class="chip">new</span></div><div class="meta">sarah.okafor@meridianfreight.example</div></button>
+        <button class="lead-btn"><div class="row"><span class="name">Marcus Reyes</span><span class="chip">new</span></div><div class="meta">mreyes.sales@gmail.example</div></button>
+        <button class="lead-btn"><div class="row"><span class="name">John Smith</span><span class="chip">new</span></div><div class="meta">jsmith84@gmail.example</div></button>
+        <button class="lead-btn"><div class="row"><span class="name">Dana Whitfield</span><span class="chip">new</span></div><div class="meta">dwhit@proton.example</div></button>
+      </div>
     </aside>
 
     <main style="display: grid; gap: 16px;">
       <section class="panel" id="record-panel">
         <h2>Lead record <span class="src">sf.query</span></h2>
         <div class="body">
-          <div class="fields" id="record-fields"></div>
+          <div class="fields" id="record-fields">
+            <div class="field"><div class="k">First name</div><div class="v">Sarah</div></div>
+            <div class="field"><div class="k">Last name</div><div class="v">Okafor</div></div>
+            <div class="field"><div class="k">Email</div><div class="v"><span class="mono">sarah.okafor@meridianfreight.example</span></div></div>
+          </div>
+          <p style="margin: 10px 0 0; font-size: 12.5px; color: var(--faint);">
+            Only these three fields are pulled from Salesforce — company, role, and footprint are all derived
+            from public sources during vetting.</p>
           <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
             <button class="btn" id="run-btn">Run vetting</button>
             <span id="run-hint" style="font-size: 12.5px; color: var(--faint);"></span>
@@ -404,7 +423,7 @@
     <div class="scroll">
       <table>
         <tr><th>Sandbox stage</th><th>Real implementation</th><th>Mocked here as</th></tr>
-        <tr><td>Pull lead</td><td>Salesforce Hosted MCP Server — record query, per-user OAuth so sharing rules apply</td><td class="mono">static JSON</td></tr>
+        <tr><td>Pull lead</td><td>Salesforce Hosted MCP Server — query pulling only FirstName, LastName, Email; per-user OAuth so sharing rules apply</td><td class="mono">static JSON</td></tr>
         <tr><td>Public-web checks</td><td>Agent web search: quoted email, name + industry terms, site:linkedin.com, dealer directories, email-domain lookup</td><td class="mono">canned results</td></tr>
         <tr><td>Scoring</td><td>Skill with your weights — identity confidence scored separately from affiliation risk</td><td class="mono">same rules, fixed inputs</td></tr>
         <tr><td>Route on risk</td><td>Threshold in the skill; held leads go to a queue (Slack, sheet, or Salesforce field) with evidence links</td><td class="mono">the panel below-left</td></tr>
@@ -422,15 +441,14 @@
   const LEADS = [
     {
       id: "sarah",
+      first: "Sarah", last: "Okafor",
       name: "Sarah Okafor",
-      title: "Director of Operations",
-      company: "Meridian Freight Group",
+      derivedCompany: "Meridian Freight Group",
       email: "sarah.okafor@meridianfreight.example",
-      source: "Webinar signup",
       checks: [
-        { tag: "domain", q: "whois + site lookup: meridianfreight.example", f: "Meridian Freight Group — regional logistics carrier. No overlap with our product category.", id: 35, risk: 0 },
-        { tag: "google", q: "\"sarah.okafor@meridianfreight.example\"", f: "2 hits: company staff page and a logistics conference speaker list. Both match the lead record.", id: 30, risk: 0 },
-        { tag: "linkedin", q: "site:linkedin.com \"Sarah Okafor\" Meridian", f: "Public headline: “Director of Operations at Meridian Freight Group”. Matches lead company and title.", id: 25, risk: 0 },
+        { tag: "domain", q: "whois + site lookup: meridianfreight.example", f: "Derived company: Meridian Freight Group — regional logistics carrier. No overlap with our product category.", id: 35, risk: 0 },
+        { tag: "google", q: "\"sarah.okafor@meridianfreight.example\"", f: "2 hits: company staff page and a logistics conference speaker list. Both tie the name to the email.", id: 30, risk: 0 },
+        { tag: "linkedin", q: "site:linkedin.com \"Sarah Okafor\" Meridian", f: "Public headline: “Director of Operations at Meridian Freight Group” — matches the company derived from her email domain.", id: 25, risk: 0 },
         { tag: "repfinder", q: "directory search: Okafor / meridianfreight.example", f: "No entries.", id: 0, risk: 0 },
         { tag: "google", q: "\"Sarah Okafor\" (reseller OR dealer OR rep OR distributor)", f: "No hits combining the name with selling terms.", id: 0, risk: 5 }
       ],
@@ -438,11 +456,10 @@
     },
     {
       id: "marcus",
+      first: "Marcus", last: "Reyes",
       name: "Marcus Reyes",
-      title: "Owner",
-      company: "MR Sales Group (self-reported)",
+      derivedCompany: null,
       email: "mreyes.sales@gmail.example",
-      source: "Contact form",
       checks: [
         { tag: "domain", q: "lookup: gmail.example", f: "Consumer domain — no company signal either way.", id: 0, risk: 0 },
         { tag: "google", q: "\"mreyes.sales@gmail.example\"", f: "Email appears verbatim in a public dealer-directory listing: “Territory Rep — Southwest, sporting goods”.", id: 40, risk: 45 },
@@ -453,11 +470,10 @@
     },
     {
       id: "john",
+      first: "John", last: "Smith",
       name: "John Smith",
-      title: "—",
-      company: "— (not provided)",
+      derivedCompany: null,
       email: "jsmith84@gmail.example",
-      source: "Trade-show badge scan",
       checks: [
         { tag: "domain", q: "lookup: gmail.example", f: "Consumer domain — no company signal either way.", id: 0, risk: 0 },
         { tag: "google", q: "\"jsmith84@gmail.example\"", f: "No hits for the exact email.", id: 0, risk: 0 },
@@ -469,11 +485,10 @@
     },
     {
       id: "dana",
+      first: "Dana", last: "Whitfield",
       name: "Dana Whitfield",
-      title: "Principal",
-      company: "Whitfield Consulting (self-reported)",
+      derivedCompany: null,
       email: "dwhit@proton.example",
-      source: "Customer referral",
       checks: [
         { tag: "domain", q: "lookup: proton.example", f: "Private consumer domain — no company signal.", id: 0, risk: 0 },
         { tag: "google", q: "\"dwhit@proton.example\"", f: "No hits for the exact email.", id: 0, risk: 0 },
@@ -531,8 +546,8 @@
   function renderRecord() {
     const l = lead();
     $("record-fields").innerHTML = [
-      ["Name", esc(l.name)], ["Title", esc(l.title)], ["Company", esc(l.company)],
-      ["Email", `<span class="mono">${esc(l.email)}</span>`], ["Lead source", esc(l.source)]
+      ["First name", esc(l.first)], ["Last name", esc(l.last)],
+      ["Email", `<span class="mono">${esc(l.email)}</span>`]
     ].map(([k, v]) => `<div class="field"><div class="k">${k}</div><div class="v">${v}</div></div>`).join("");
     const s = state.status[l.id];
     $("run-btn").textContent = s === "new" ? "Run vetting" : "Re-run vetting";
@@ -696,11 +711,12 @@
       const wasReviewed = state.scores[l.id] && (state.scores[l.id].risk >= state.threshold || (state.scores[l.id].risk >= 35 && state.scores[l.id].id < 50));
       const tasks = [...TASKS];
       if (wasReviewed) tasks.push({ t: "Log vetting override rationale", due: "due +1d" });
-      if (l.caveat && !wasReviewed) tasks.push({ t: "Verify company details on kickoff (low public footprint)", due: "kickoff" });
+      if (!l.derivedCompany) tasks.push({ t: "Confirm company on kickoff (not derivable from name + email)", due: "kickoff" });
       return `
         <div class="ph-account">
-          <div class="co">${esc(l.company.replace(" (self-reported)", ""))}
+          <div class="co">${esc(l.derivedCompany || l.name + " — company TBD")}
             <span class="chip created">account</span>
+            ${l.derivedCompany ? `<span class="chip">from email domain</span>` : ""}
             ${wasReviewed ? `<span class="chip review">human-approved</span>` : ""}
           </div>
           <div class="owner">contact: ${esc(l.name)} · ${esc(l.email)}</div>
@@ -726,6 +742,7 @@
 
   $("run-btn").addEventListener("click", runVetting);
 
+  document.getElementById("nojs-banner").remove();
   renderLeads(); renderRecord(); setStep(1, false);
 </script>
 
