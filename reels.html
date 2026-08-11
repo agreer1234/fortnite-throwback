@@ -121,16 +121,16 @@
 </div>
 
 <footer>
-  Powered by public <a href="https://cobalt.tools" target="_blank" rel="noopener">cobalt</a> instances.
-  If all instances are busy, use the fallback link that appears above.
+  Public relays are unreliable — for downloads that always work,
+  <a href="#" id="setupLink">connect your own server</a>.
+  <span id="backendState"></span><br>
   Only download content you have the rights to save.
-  <div style="margin-top:6px; opacity:0.6">v5</div>
+  <div style="margin-top:6px; opacity:0.6">v6</div>
 </footer>
 
 <script>
 (() => {
   // ---- data sources -------------------------------------------------------
-  // Last-resort cobalt API instances if every registry is unreachable
   const SEED_INSTANCES = [
     "https://cobalt-api.meowing.de",
     "https://cobalt-api.kwiatekmiki.com",
@@ -138,8 +138,6 @@
     "https://cobalt-backend.canine.tools",
     "https://api.dwnld.page",
   ];
-  // Community trackers of cobalt instances. cobalt.directory actually
-  // test-downloads from each service, so its "working" list is best.
   const REGISTRIES = [
     "https://cobalt.directory/api/working?type=api",
     "https://cobalt.directory/api/tests",
@@ -155,6 +153,7 @@
     { name: "corsproxy",  wrap: u => "https://corsproxy.io/?url=" + encodeURIComponent(u) },
     { name: "thingproxy", wrap: u => "https://thingproxy.freeboard.io/fetch/" + u },
   ];
+  const BACKEND_KEY = "reelSaverBackend";
 
   // ---- helpers ------------------------------------------------------------
   const $ = id => document.getElementById(id);
@@ -162,6 +161,8 @@
   const preview = $("preview"), openLink = $("openLink"), diagLog = $("diagLog");
   let currentBlob = null, currentName = "reel.mp4", objectUrl = null;
   let log = [];
+
+  const backend = () => (localStorage.getItem(BACKEND_KEY) || "").trim();
 
   function note(msg) {
     log.push(msg);
@@ -192,7 +193,6 @@
     return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
   }
 
-  // GET a URL directly first, then through each CORS proxy until one works
   async function getJson(url) {
     const attempts = [u => u, ...PROXIES.map(p => p.wrap)];
     let lastErr;
@@ -206,6 +206,17 @@
     throw lastErr;
   }
 
+  // Real container sniffing. A 200 KB response that is actually Instagram's
+  // HTML page will pass any size check, so inspect the bytes themselves:
+  // ISO-BMFF (mp4/mov) carries "ftyp" at offset 4, WebM starts with 1A45DFA3.
+  async function sniff(blob) {
+    const head = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+    const ascii = String.fromCharCode(...head).replace(/[^\x20-\x7e]/g, ".");
+    const isMp4 = head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70;
+    const isWebm = head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3;
+    return { ok: isMp4 || isWebm, kind: isMp4 ? "mp4" : isWebm ? "webm" : "unknown", ascii };
+  }
+
   // Stream a URL to a Blob exactly once, reporting progress. Cobalt tunnel
   // links are single-use, so this is the only fetch the video ever gets:
   // preview and save both run off the resulting Blob.
@@ -216,8 +227,8 @@
     clearTimeout(guard);
     if (!res.ok) throw new Error("HTTP " + res.status);
 
-    const type = res.headers.get("content-type") || "";
-    if (/json|text\/html/i.test(type)) throw new Error("got " + type.split(";")[0] + ", not video");
+    const type = (res.headers.get("content-type") || "").split(";")[0];
+    if (/json|html|xml/i.test(type)) throw new Error("server sent " + type + ", not video");
 
     const total = +res.headers.get("content-length") || 0;
     const reader = res.body && res.body.getReader ? res.body.getReader() : null;
@@ -242,7 +253,11 @@
       clearTimeout(stall);
       blob = new Blob(chunks, { type: "video/mp4" });
     }
-    if (blob.size < 10000) throw new Error("only " + blob.size + " bytes, not a video");
+
+    const s = await sniff(blob);
+    if (!s.ok) {
+      throw new Error(`not a video (${blob.size}b, ${type || "no type"}, starts "${s.ascii.slice(0, 12)}")`);
+    }
     return blob;
   }
 
@@ -252,15 +267,12 @@
     return v.startsWith("http") ? v : "https://" + v;
   }
 
-  // Accepts any of the registry shapes and returns cobalt API base URLs
-  // that look Instagram-capable, best first.
   function parseRegistry(json) {
     const body = json?.data ?? json;
     // cobalt.directory /api/working: { instagram: ["api.host", ...], ... }
     if (body && !Array.isArray(body) && Array.isArray(body.instagram)) {
       return body.instagram.map(toApiUrl).filter(Boolean);
     }
-    // array-of-instances shapes (tests / instances.json)
     const arr = Array.isArray(body) ? body : (Array.isArray(body?.instances) ? body.instances : null);
     if (!arr) return [];
     return arr
@@ -295,7 +307,6 @@
 
   // ---- link resolution ----------------------------------------------------
   async function askInstance(base, target) {
-    const host = new URL(base).hostname;
     const res = await fetchT(base.replace(/\/$/, "") + "/", {
       method: "POST",
       headers: { "Accept": "application/json", "Content-Type": "application/json" },
@@ -308,7 +319,7 @@
       url = (data.picker.find(p => p.type === "video") || data.picker[0] || {}).url;
     }
     if (!url) throw new Error(data?.error?.code || "HTTP " + res.status);
-    return { url, filename: data.filename || "reel.mp4", src: host };
+    return { url, filename: data.filename || "reel.mp4", src: new URL(base).hostname };
   }
 
   // Scrape the reel's public embed page for the CDN video URL. The page is
@@ -363,26 +374,41 @@
 
     let done = false;
 
-    // Strategy 1: public cobalt instances
-    setStatus("Finding a working server…", "", true);
-    const instances = await getInstances();
-    for (let i = 0; i < instances.length && !done; i++) {
-      const host = new URL(instances[i]).hostname;
-      setStatus(`Trying server ${i + 1} of ${instances.length}…`, "", true);
-      let cand;
+    // Strategy 0: the user's own backend, when configured — always preferred
+    const own = backend();
+    if (own) {
+      setStatus("Asking your server…", "", true);
       try {
-        cand = await askInstance(instances[i], target);
-        note(`${host}: returned a link`);
-      } catch (e) {
-        note(`${host}: ${e.message || e.name}`);
-        continue;
-      }
-      setStatus("Downloading video…", "", true);
-      try {
-        present(await download(cand.url), cand.filename, cand.src);
+        const url = own.replace(/\/$/, "") + "/?url=" + encodeURIComponent(target);
+        present(await download(url), "reel.mp4", "your server");
         done = true;
       } catch (e) {
-        note(`  ↳ download failed: ${e.message || e.name}`);
+        note(`your server: ${e.message || e.name}`);
+      }
+    }
+
+    // Strategy 1: public cobalt instances
+    if (!done) {
+      setStatus("Finding a working server…", "", true);
+      const instances = await getInstances();
+      for (let i = 0; i < instances.length && !done; i++) {
+        const host = new URL(instances[i]).hostname;
+        setStatus(`Trying server ${i + 1} of ${instances.length}…`, "", true);
+        let cand;
+        try {
+          cand = await askInstance(instances[i], target);
+          note(`${host}: returned a link`);
+        } catch (e) {
+          note(`${host}: ${e.message || e.name}`);
+          continue;
+        }
+        setStatus("Downloading video…", "", true);
+        try {
+          present(await download(cand.url), cand.filename, cand.src);
+          done = true;
+        } catch (e) {
+          note(`  ↳ download failed: ${e.message || e.name}`);
+        }
       }
     }
 
@@ -403,9 +429,11 @@
 
     $("goBtn").disabled = false;
     if (!done) {
+      const extra = own ? "" :
+        ' Public relays are blocked right now — <a style="color:#d67aff" href="#" onclick="document.getElementById(\'setupLink\').click();return false">connect your own server</a> for downloads that always work.';
       setStatus(
-        'Couldn\'t fetch it right now. <a style="color:#d67aff" target="_blank" rel="noopener" href="https://cobalt.tools/#'
-        + encodeURIComponent(target) + '">Open in cobalt.tools instead</a>', "err");
+        'Couldn\'t fetch it. <a style="color:#d67aff" target="_blank" rel="noopener" href="https://cobalt.tools/#'
+        + encodeURIComponent(target) + '">Try cobalt.tools</a>.' + extra, "err");
     }
   }
 
@@ -434,6 +462,27 @@
     } finally { btn.disabled = false; }
   }
 
+  // ---- own-backend setup --------------------------------------------------
+  function refreshBackendState() {
+    const b = backend();
+    $("backendState").textContent = b ? " — connected to " + b.replace(/^https?:\/\//, "") : "";
+  }
+
+  $("setupLink").addEventListener("click", e => {
+    e.preventDefault();
+    const current = backend();
+    const entered = prompt(
+      "Paste your Cloudflare Worker URL (setup takes about 5 minutes — see SETUP-WORKER.md in the repo).\n\n" +
+      "Leave empty to go back to public relays.",
+      current);
+    if (entered === null) return;
+    const v = entered.trim();
+    if (!v) { localStorage.removeItem(BACKEND_KEY); }
+    else if (!/^https:\/\//.test(v)) { alert("That needs to start with https://"); return; }
+    else { localStorage.setItem(BACKEND_KEY, v.replace(/\/$/, "")); }
+    refreshBackendState();
+  });
+
   $("goBtn").addEventListener("click", go);
   $("saveBtn").addEventListener("click", save);
   urlInput.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
@@ -443,6 +492,8 @@
       go();
     } catch { setStatus("Clipboard blocked — paste into the box manually.", "err"); }
   });
+
+  refreshBackendState();
 })();
 </script>
 </body>
