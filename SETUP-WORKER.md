@@ -1,4 +1,4 @@
-# Connect your own server (about 5 minutes)
+# Connect your own server
 
 Reel Saver normally borrows volunteer-run public relays. They are frequently
 captcha-walled, rate-limited, or simply down, which is why downloads fail in
@@ -8,7 +8,19 @@ The server is a **Cloudflare Worker**: free, no credit card, no maintenance. It
 receives a reel link, asks Instagram for the highest-resolution MP4, and streams
 it back to your phone. It stores nothing and logs nothing.
 
-## 1. Create the Worker
+## Fastest route: one click
+
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/agreer1234/fortnite-throwback)
+
+That button reads `wrangler.toml` and `worker.js` from this repository and
+deploys them to your own Cloudflare account. You will be asked to sign in (or
+sign up — it is free) and to authorize Cloudflare to read the repository. When
+it finishes it shows your Worker's URL, something like
+`https://reel-saver.<your-name>.workers.dev`. Skip to step 3 below.
+
+If the button gives you trouble, the manual route takes about five minutes.
+
+## Manual route: 1. Create the Worker
 
 1. Go to [dash.cloudflare.com](https://dash.cloudflare.com) and sign up (free).
 2. In the left sidebar choose **Compute (Workers)** → **Create application** →
