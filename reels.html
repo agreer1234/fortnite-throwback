@@ -80,6 +80,14 @@
 
   footer { margin-top: auto; padding-top: 30px; text-align: center; color: var(--muted); font-size: 0.8rem; max-width: 460px; }
   footer a { color: var(--muted); }
+
+  details.diag { margin-top: 12px; color: var(--muted); font-size: 0.78rem; }
+  details.diag summary { cursor: pointer; text-align: center; }
+  details.diag pre {
+    margin-top: 8px; padding: 10px; background: #10131a; border: 1px solid var(--border);
+    border-radius: 10px; white-space: pre-wrap; word-break: break-all;
+    font-family: ui-monospace, Menlo, monospace; font-size: 0.72rem; max-height: 40vh; overflow-y: auto;
+  }
 </style>
 </head>
 <body>
@@ -105,6 +113,11 @@
       <a class="btn" id="openLink" target="_blank" rel="noopener">Open file</a>
     </div>
   </div>
+
+  <details class="diag" id="diag" style="display:none">
+    <summary>details</summary>
+    <pre id="diagLog"></pre>
+  </details>
 </div>
 
 <footer>
@@ -115,8 +128,8 @@
 
 <script>
 (() => {
-  // Fallback cobalt API instances if the live registry can't be reached.
-  // Current ones are listed at https://instances.cobalt.best
+  // ---- data sources -------------------------------------------------------
+  // Last-resort cobalt API instances if every registry is unreachable
   const SEED_INSTANCES = [
     "https://cobalt-api.meowing.de",
     "https://cobalt-api.kwiatekmiki.com",
@@ -124,21 +137,34 @@
     "https://cobalt-backend.canine.tools",
     "https://api.dwnld.page",
   ];
-  // Community-maintained registries of healthy cobalt instances
+  // Community trackers of cobalt instances. cobalt.directory actually
+  // test-downloads from each service, so its "working" list is best.
   const REGISTRIES = [
+    "https://cobalt.directory/api/working?type=api",
+    "https://cobalt.directory/api/tests",
     "https://instances.cobalt.best/api/instances.json",
     "https://instances.hyper.lol/instances.json",
   ];
-  // CORS proxies for the Instagram-embed fallback strategy
+  // Public CORS proxies, used both to reach registries that lack CORS
+  // headers and for the Instagram-embed fallback strategy
   const PROXIES = [
     u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
+    u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
     u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
   ];
 
+  // ---- helpers ------------------------------------------------------------
   const $ = id => document.getElementById(id);
   const urlInput = $("url"), status = $("status"), result = $("result");
-  const preview = $("preview"), openLink = $("openLink");
+  const preview = $("preview"), openLink = $("openLink"), diagLog = $("diagLog");
   let currentUrl = null, currentBlob = null, currentName = "reel.mp4";
+  let log = [];
+
+  function note(msg) {
+    log.push(msg);
+    diagLog.textContent = log.join("\n");
+    $("diag").style.display = "block";
+  }
 
   function setStatus(msg, cls = "", busy = false) {
     status.className = "status " + cls;
@@ -161,47 +187,90 @@
     return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(timer));
   }
 
-  // Pull the live list of healthy, no-auth cobalt instances; fall back to seeds.
+  // GET a URL directly first, then through each CORS proxy until one works
+  async function getJson(url) {
+    const attempts = [u => u, ...PROXIES];
+    let lastErr;
+    for (const wrap of attempts) {
+      try {
+        const res = await fetchT(wrap(url), {}, 8000);
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return await res.json();
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr;
+  }
+
+  // ---- instance discovery -------------------------------------------------
+  function toApiUrl(v) {
+    if (typeof v !== "string" || !v) return null;
+    return v.startsWith("http") ? v : "https://" + v;
+  }
+
+  // Accepts any of the registry shapes and returns cobalt API base URLs
+  // that look Instagram-capable, best first.
+  function parseRegistry(json) {
+    const body = json?.data ?? json;
+    // cobalt.directory /api/working: { instagram: ["api.host", ...], ... }
+    if (body && !Array.isArray(body) && Array.isArray(body.instagram)) {
+      return body.instagram.map(toApiUrl).filter(Boolean);
+    }
+    // array-of-instances shapes (tests / instances.json)
+    const arr = Array.isArray(body) ? body : (Array.isArray(body?.instances) ? body.instances : null);
+    if (!arr) return [];
+    return arr
+      .filter(i => {
+        if (typeof i !== "object" || !i) return false;
+        const online = i.online ?? i.api_online ?? (i.status !== "offline");
+        const cors = i.cors ?? i.info?.cors ?? 1;
+        const auth = i.auth ?? i.info?.auth ?? false;
+        const igRaw = i.services?.instagram ?? i.tests?.instagram;
+        const ig = typeof igRaw === "object" && igRaw ? (igRaw.status ?? igRaw.working) : igRaw;
+        return online && (cors === 1 || cors === true) && !auth &&
+               (ig === true || ig === "true" || ig === undefined);
+      })
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .map(i => toApiUrl(i.api || i.api_url || i.domain))
+      .filter(Boolean);
+  }
+
   async function getInstances() {
     for (const reg of REGISTRIES) {
       try {
-        const list = await (await fetchT(reg)).json();
-        if (!Array.isArray(list)) continue;
-        const good = list
-          .filter(i => {
-            const online = i.online ?? i.api_online ?? (i.status === "online");
-            const cors = i.cors ?? i.info?.cors ?? 1;
-            const auth = i.auth ?? i.info?.auth ?? false;
-            const ig = i.services?.instagram;
-            return online && (cors === 1 || cors === true) && !auth && ig !== false;
-          })
-          .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-          .map(i => {
-            const api = i.api || i.api_url || "";
-            return api.startsWith("http") ? api : (i.protocol || "https") + "://" + api;
-          })
-          .filter(Boolean);
-        if (good.length) return good.slice(0, 8);
-      } catch { /* registry unreachable — try the next one */ }
+        const found = parseRegistry(await getJson(reg));
+        note(`registry ${new URL(reg).hostname}: ${found.length} usable instances`);
+        if (found.length) return found.slice(0, 6);
+      } catch (e) {
+        note(`registry ${new URL(reg).hostname}: failed (${e.message || e.name})`);
+      }
     }
+    note("all registries failed, using built-in seed list");
     return SEED_INSTANCES;
   }
 
+  // ---- download strategies ------------------------------------------------
   async function askInstance(base, target) {
-    const res = await fetchT(base.replace(/\/$/, "") + "/", {
-      method: "POST",
-      headers: { "Accept": "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ url: target, videoQuality: "max", filenameStyle: "basic" }),
-    }, 12000);
-    const data = await res.json();
-    if (data.status === "redirect" || data.status === "tunnel") {
-      return { url: data.url, filename: data.filename || "reel.mp4" };
+    const host = new URL(base).hostname;
+    try {
+      const res = await fetchT(base.replace(/\/$/, "") + "/", {
+        method: "POST",
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ url: target, videoQuality: "max", filenameStyle: "basic" }),
+      }, 9000);
+      const data = await res.json();
+      if (data.status === "redirect" || data.status === "tunnel") {
+        note(`${host}: OK (${data.status})`);
+        return { url: data.url, filename: data.filename || "reel.mp4" };
+      }
+      if (data.status === "picker" && Array.isArray(data.picker)) {
+        const vid = data.picker.find(p => p.type === "video") || data.picker[0];
+        if (vid) { note(`${host}: OK (picker)`); return { url: vid.url, filename: "reel.mp4" }; }
+      }
+      throw new Error(data?.error?.code || "HTTP " + res.status);
+    } catch (e) {
+      note(`${host}: ${e.message || e.name}`);
+      throw e;
     }
-    if (data.status === "picker" && Array.isArray(data.picker)) {
-      const vid = data.picker.find(p => p.type === "video") || data.picker[0];
-      if (vid) return { url: vid.url, filename: "reel.mp4" };
-    }
-    throw new Error(data?.error?.code || "unexpected response");
   }
 
   // Fallback: scrape the reel's public embed page through a CORS proxy and
@@ -209,20 +278,29 @@
   async function askEmbed(target) {
     const embedUrl = target + "embed/captioned/";
     for (const wrap of PROXIES) {
+      const phost = new URL(wrap("https://x.invalid")).hostname;
       try {
-        const html = await (await fetchT(wrap(embedUrl), {}, 12000)).text();
+        const res = await fetchT(wrap(embedUrl), {}, 12000);
+        const html = await res.text();
         const m = html.match(/"video_url"\s*:\s*"([^"]+)"/) ||
                   html.match(/videoUrl&quot;:&quot;([^&]+?)&quot;/) ||
                   html.match(/"contentUrl"\s*:\s*"([^"]+)"/);
         if (m) {
           const url = JSON.parse('"' + m[1] + '"').replace(/&amp;/g, "&");
-          if (/^https:\/\//.test(url)) return { url, filename: "reel.mp4" };
+          if (/^https:\/\//.test(url)) {
+            note(`embed via ${phost}: OK`);
+            return { url, filename: "reel.mp4" };
+          }
         }
-      } catch { /* proxy failed — try the next one */ }
+        note(`embed via ${phost}: page fetched (HTTP ${res.status}, ${html.length}b) but no video URL in it`);
+      } catch (e) {
+        note(`embed via ${phost}: ${e.message || e.name}`);
+      }
     }
     throw new Error("embed scrape failed");
   }
 
+  // ---- main flow ----------------------------------------------------------
   async function go() {
     const target = normalize(urlInput.value);
     if (!target) {
@@ -232,14 +310,14 @@
     $("goBtn").disabled = true;
     result.style.display = "none";
     currentBlob = null; currentUrl = null;
+    log = []; diagLog.textContent = ""; $("diag").style.display = "none";
 
     let hit = null;
     setStatus("Finding a working server…", "", true);
     const instances = await getInstances();
-    for (let i = 0; i < instances.length; i++) {
+    for (let i = 0; i < instances.length && !hit; i++) {
       setStatus(`Trying server ${i + 1} of ${instances.length}…`, "", true);
-      try { hit = await askInstance(instances[i], target); break; }
-      catch { /* try the next instance */ }
+      try { hit = await askInstance(instances[i], target); } catch { /* next */ }
     }
     if (!hit) {
       setStatus("Servers busy — trying a direct route…", "", true);
@@ -269,7 +347,7 @@
     try {
       if (!currentBlob) {
         setStatus("Downloading video…", "", true);
-        const res = await fetch(currentUrl);
+        const res = await fetchT(currentUrl, {}, 60000);
         if (!res.ok) throw new Error("fetch failed");
         currentBlob = await res.blob();
       }
