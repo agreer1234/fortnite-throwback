@@ -121,11 +121,9 @@
 </div>
 
 <footer>
-  Public relays are unreliable — for downloads that always work,
-  <a href="#" id="setupLink">connect your own server</a>.
-  <span id="backendState"></span><br>
+  <a href="#" id="setupLink">Server</a><span id="backendState"></span><br>
   Only download content you have the rights to save.
-  <div style="margin-top:6px; opacity:0.6">v6</div>
+  <div style="margin-top:6px; opacity:0.6">v7</div>
 </footer>
 
 <script>
@@ -154,6 +152,9 @@
     { name: "thingproxy", wrap: u => "https://thingproxy.freeboard.io/fetch/" + u },
   ];
   const BACKEND_KEY = "reelSaverBackend";
+  // Personal Cloudflare Worker (see SETUP-WORKER.md). Tried before any public
+  // relay; a URL saved on the device overrides it.
+  const DEFAULT_BACKEND = "https://reel-saver.andrewcgreer1.workers.dev";
 
   // ---- helpers ------------------------------------------------------------
   const $ = id => document.getElementById(id);
@@ -162,7 +163,11 @@
   let currentBlob = null, currentName = "reel.mp4", objectUrl = null;
   let log = [];
 
-  const backend = () => (localStorage.getItem(BACKEND_KEY) || "").trim();
+  const backend = () => {
+    const saved = (localStorage.getItem(BACKEND_KEY) || "").trim();
+    if (saved) return saved;
+    return localStorage.getItem(BACKEND_KEY) === "" ? "" : DEFAULT_BACKEND;
+  };
 
   function note(msg) {
     log.push(msg);
@@ -465,19 +470,22 @@
   // ---- own-backend setup --------------------------------------------------
   function refreshBackendState() {
     const b = backend();
-    $("backendState").textContent = b ? " — connected to " + b.replace(/^https?:\/\//, "") : "";
+    $("backendState").textContent = b
+      ? ": " + b.replace(/^https?:\/\//, "")
+      : ": public relays only";
   }
 
   $("setupLink").addEventListener("click", e => {
     e.preventDefault();
     const current = backend();
     const entered = prompt(
-      "Paste your Cloudflare Worker URL (setup takes about 5 minutes — see SETUP-WORKER.md in the repo).\n\n" +
-      "Leave empty to go back to public relays.",
+      "Server URL used to fetch reels (see SETUP-WORKER.md in the repo).\n\n" +
+      "Leave empty to use public relays only. Type \"default\" to restore the built-in one.",
       current);
     if (entered === null) return;
     const v = entered.trim();
-    if (!v) { localStorage.removeItem(BACKEND_KEY); }
+    if (!v) { localStorage.setItem(BACKEND_KEY, ""); }          // explicitly disabled
+    else if (v.toLowerCase() === "default") { localStorage.removeItem(BACKEND_KEY); }
     else if (!/^https:\/\//.test(v)) { alert("That needs to start with https://"); return; }
     else { localStorage.setItem(BACKEND_KEY, v.replace(/\/$/, "")); }
     refreshBackendState();
