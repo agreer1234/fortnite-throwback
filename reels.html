@@ -126,7 +126,7 @@
 <footer>
   <a href="#" id="setupLink">Server</a><span id="backendState"></span><br>
   Only download content you have the rights to save.
-  <div style="margin-top:6px; opacity:0.6">v8</div>
+  <div style="margin-top:6px; opacity:0.6">v9</div>
 </footer>
 
 <script>
@@ -233,7 +233,19 @@
     let guard = setTimeout(() => ctrl.abort(), 15000); // until first response
     const res = await fetch(url, { signal: ctrl.signal });
     clearTimeout(guard);
-    if (!res.ok) throw new Error("HTTP " + res.status);
+    if (!res.ok) {
+      // a backend that failed explains itself in the body — surface that
+      let detail = "";
+      try {
+        const body = (await res.text()).trim();
+        if (body) {
+          let parsed;
+          try { parsed = JSON.parse(body); } catch {}
+          detail = " — " + (parsed?.error || body).toString().slice(0, 300);
+        }
+      } catch {}
+      throw new Error("HTTP " + res.status + detail);
+    }
 
     const type = (res.headers.get("content-type") || "").split(";")[0];
     if (/json|html|xml/i.test(type)) throw new Error("server sent " + type + ", not video");
