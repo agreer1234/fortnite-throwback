@@ -124,7 +124,7 @@
   Powered by public <a href="https://cobalt.tools" target="_blank" rel="noopener">cobalt</a> instances.
   If all instances are busy, use the fallback link that appears above.
   Only download content you have the rights to save.
-  <div style="margin-top:6px; opacity:0.6">v3</div>
+  <div style="margin-top:6px; opacity:0.6">v4</div>
 </footer>
 
 <script>
@@ -146,12 +146,14 @@
     "https://instances.cobalt.best/api/instances.json",
     "https://instances.hyper.lol/instances.json",
   ];
-  // Public CORS proxies, used both to reach registries that lack CORS
-  // headers and for the Instagram-embed fallback strategy
+  // Public CORS proxies. Instagram CDN links are signed against the IP that
+  // requested them, so a link obtained through a proxy only plays back
+  // through that same proxy — these wrap both the lookup and the media.
   const PROXIES = [
-    u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
-    u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u),
-    u => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+    { name: "allorigins", wrap: u => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u) },
+    { name: "codetabs",   wrap: u => "https://api.codetabs.com/v1/proxy?quest=" + encodeURIComponent(u) },
+    { name: "corsproxy",  wrap: u => "https://corsproxy.io/?url=" + encodeURIComponent(u) },
+    { name: "thingproxy", wrap: u => "https://thingproxy.freeboard.io/fetch/" + u },
   ];
 
   // ---- helpers ------------------------------------------------------------
@@ -190,7 +192,7 @@
 
   // GET a URL directly first, then through each CORS proxy until one works
   async function getJson(url) {
-    const attempts = [u => u, ...PROXIES];
+    const attempts = [u => u, ...PROXIES.map(p => p.wrap)];
     let lastErr;
     for (const wrap of attempts) {
       try {
@@ -200,6 +202,29 @@
       } catch (e) { lastErr = e; }
     }
     throw lastErr;
+  }
+
+  // Load a URL into a throwaway <video> and see whether it yields real media.
+  // This is what tells a genuinely playable link apart from a 403 page.
+  function probeVideo(url, ms = 9000) {
+    return new Promise(resolve => {
+      const v = document.createElement("video");
+      v.preload = "metadata";
+      v.muted = true;
+      v.playsInline = true;
+      let settled = false;
+      const done = ok => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try { v.removeAttribute("src"); v.load(); } catch {}
+        resolve(ok);
+      };
+      const timer = setTimeout(() => done(false), ms);
+      v.onloadedmetadata = () => done(v.videoWidth > 0 || v.duration > 0);
+      v.onerror = () => done(false);
+      v.src = url;
+    });
   }
 
   // ---- instance discovery -------------------------------------------------
@@ -249,7 +274,8 @@
     return SEED_INSTANCES;
   }
 
-  // ---- download strategies ------------------------------------------------
+  // ---- candidate collection -----------------------------------------------
+  // A candidate is a URL we might be able to play and download.
   async function askInstance(base, target) {
     const host = new URL(base).hostname;
     try {
@@ -259,46 +285,48 @@
         body: JSON.stringify({ url: target, videoQuality: "max", filenameStyle: "basic" }),
       }, 9000);
       const data = await res.json();
-      if (data.status === "redirect" || data.status === "tunnel") {
-        note(`${host}: OK (${data.status})`);
-        return { url: data.url, filename: data.filename || "reel.mp4" };
+      let url = null;
+      if (data.status === "redirect" || data.status === "tunnel") url = data.url;
+      else if (data.status === "picker" && Array.isArray(data.picker)) {
+        url = (data.picker.find(p => p.type === "video") || data.picker[0] || {}).url;
       }
-      if (data.status === "picker" && Array.isArray(data.picker)) {
-        const vid = data.picker.find(p => p.type === "video") || data.picker[0];
-        if (vid) { note(`${host}: OK (picker)`); return { url: vid.url, filename: "reel.mp4" }; }
-      }
-      throw new Error(data?.error?.code || "HTTP " + res.status);
+      if (!url) throw new Error(data?.error?.code || "HTTP " + res.status);
+      note(`${host}: returned a link`);
+      return { url, filename: data.filename || "reel.mp4", src: host };
     } catch (e) {
       note(`${host}: ${e.message || e.name}`);
       throw e;
     }
   }
 
-  // Fallback: scrape the reel's public embed page through a CORS proxy and
-  // pull the direct CDN video URL out of it.
+  // Scrape the reel's public embed page for the CDN video URL. Because the
+  // page is fetched through a proxy, the resulting link is only valid from
+  // that proxy's IP — so the proxied form is offered as a candidate too.
   async function askEmbed(target) {
     const embedUrl = target + "embed/captioned/";
-    for (const wrap of PROXIES) {
-      const phost = new URL(wrap("https://x.invalid")).hostname;
+    const out = [];
+    for (const p of PROXIES) {
       try {
-        const res = await fetchT(wrap(embedUrl), {}, 12000);
+        const res = await fetchT(p.wrap(embedUrl), {}, 12000);
         const html = await res.text();
         const m = html.match(/"video_url"\s*:\s*"([^"]+)"/) ||
                   html.match(/videoUrl&quot;:&quot;([^&]+?)&quot;/) ||
                   html.match(/"contentUrl"\s*:\s*"([^"]+)"/);
-        if (m) {
-          const url = JSON.parse('"' + m[1] + '"').replace(/&amp;/g, "&");
-          if (/^https:\/\//.test(url)) {
-            note(`embed via ${phost}: OK`);
-            return { url, filename: "reel.mp4" };
-          }
+        if (!m) {
+          note(`embed via ${p.name}: fetched ${html.length}b, no video URL found`);
+          continue;
         }
-        note(`embed via ${phost}: page fetched (HTTP ${res.status}, ${html.length}b) but no video URL in it`);
+        const raw = JSON.parse('"' + m[1] + '"').replace(/&amp;/g, "&");
+        if (!/^https:\/\//.test(raw)) continue;
+        note(`embed via ${p.name}: found CDN link`);
+        // proxied form first: the signature belongs to the proxy's IP
+        out.push({ url: p.wrap(raw), filename: "reel.mp4", src: p.name + " (proxied)" });
+        out.push({ url: raw, filename: "reel.mp4", src: p.name + " (direct)" });
       } catch (e) {
-        note(`embed via ${phost}: ${e.message || e.name}`);
+        note(`embed via ${p.name}: ${e.message || e.name}`);
       }
     }
-    throw new Error("embed scrape failed");
+    return out;
   }
 
   // ---- main flow ----------------------------------------------------------
@@ -314,16 +342,30 @@
     log = []; diagLog.textContent = ""; $("diag").style.display = "none";
 
     let hit = null;
+
+    // Strategy 1: public cobalt instances, verifying each link actually plays
     setStatus("Finding a working server…", "", true);
     const instances = await getInstances();
     for (let i = 0; i < instances.length && !hit; i++) {
       setStatus(`Trying server ${i + 1} of ${instances.length}…`, "", true);
-      try { hit = await askInstance(instances[i], target); } catch { /* next */ }
+      let cand;
+      try { cand = await askInstance(instances[i], target); } catch { continue; }
+      setStatus("Checking the video plays…", "", true);
+      if (await probeVideo(cand.url)) { hit = cand; }
+      else { note(`  ↳ link from ${cand.src} does not play (likely expired or blocked)`); }
     }
+
+    // Strategy 2: scrape the public embed page, then find a form that plays
     if (!hit) {
       setStatus("Servers busy — trying a direct route…", "", true);
-      try { hit = await askEmbed(target); } catch { /* fall through */ }
+      const cands = await askEmbed(target);
+      for (const cand of cands) {
+        setStatus(`Checking ${cand.src}…`, "", true);
+        if (await probeVideo(cand.url)) { hit = cand; break; }
+        note(`  ↳ ${cand.src} does not play`);
+      }
     }
+
     $("goBtn").disabled = false;
 
     if (!hit) {
@@ -338,7 +380,30 @@
     openLink.href = currentUrl;
     preview.src = currentUrl;
     result.style.display = "block";
-    setStatus("Got it — highest quality available. Preview below.", "ok");
+    note(`using: ${hit.src}`);
+    note(`url: ${currentUrl}`);
+    setStatus(`Got it via ${hit.src} — preview below.`, "ok");
+  }
+
+  // ---- saving -------------------------------------------------------------
+  // Try the resolved URL, then the same URL through each proxy: whichever
+  // returns real video bytes wins.
+  async function fetchBlob() {
+    const attempts = [{ name: "direct", url: currentUrl },
+                      ...PROXIES.map(p => ({ name: p.name, url: p.wrap(currentUrl) }))];
+    for (const a of attempts) {
+      try {
+        const res = await fetchT(a.url, {}, 90000);
+        if (!res.ok) { note(`save via ${a.name}: HTTP ${res.status}`); continue; }
+        const blob = await res.blob();
+        if (blob.size < 10000) { note(`save via ${a.name}: only ${blob.size}b, not a video`); continue; }
+        note(`save via ${a.name}: ${(blob.size / 1048576).toFixed(1)} MB`);
+        return blob;
+      } catch (e) {
+        note(`save via ${a.name}: ${e.message || e.name}`);
+      }
+    }
+    return null;
   }
 
   async function save() {
@@ -348,9 +413,11 @@
     try {
       if (!currentBlob) {
         setStatus("Downloading video…", "", true);
-        const res = await fetchT(currentUrl, {}, 60000);
-        if (!res.ok) throw new Error("fetch failed");
-        currentBlob = await res.blob();
+        currentBlob = await fetchBlob();
+      }
+      if (!currentBlob) {
+        setStatus("Couldn't download the file. Long-press the video above and choose “Save Video”.", "err");
+        return;
       }
       const file = new File([currentBlob], currentName, { type: "video/mp4" });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -365,12 +432,8 @@
         setStatus("Download started.", "ok");
       }
     } catch (e) {
-      if (e.name === "AbortError") { setStatus("", ""); }
-      else {
-        // CDN blocked the cross-origin fetch — fall back to opening the file
-        setStatus("Couldn't save directly. Opening the file — long-press the video and choose “Save Video”.", "err");
-        window.open(currentUrl, "_blank");
-      }
+      if (e.name === "AbortError") setStatus("", "");
+      else setStatus("Save failed: " + (e.message || e.name) + ". Long-press the video and choose “Save Video”.", "err");
     } finally { btn.disabled = false; }
   }
 
