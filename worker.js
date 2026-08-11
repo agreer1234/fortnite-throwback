@@ -28,6 +28,13 @@ const WEB_HEADERS = {
   "Sec-Fetch-Mode": "navigate",
 };
 
+// Instagram refuses most unauthenticated requests from datacenter addresses.
+// A session cookie, supplied as the IG_SESSIONID secret, makes them succeed.
+function authHeaders(env) {
+  const sid = env && env.IG_SESSIONID;
+  return sid ? { Cookie: `sessionid=${sid}` } : {};
+}
+
 function shortcodeOf(raw) {
   try {
     const u = new URL(raw);
@@ -77,7 +84,7 @@ function videoFromMedia(media) {
 
 // Strategy 1: the private-but-unauthenticated mobile API. Returns every
 // rendition, so it gives the genuine highest resolution when it works.
-async function fromMobileApi(code) {
+async function fromMobileApi(code, env) {
   const mediaId = shortcodeToMediaId(code);
   if (!mediaId) throw new Error("mobile-api: bad shortcode");
   const res = await fetch(`https://i.instagram.com/api/v1/media/${mediaId}/info/`, {
@@ -85,6 +92,7 @@ async function fromMobileApi(code) {
       "User-Agent": APP_UA,
       "X-IG-App-ID": IG_APP_ID,
       "Accept-Language": "en-US",
+      ...authHeaders(env),
     },
   });
   if (!res.ok) throw new Error(`mobile-api: HTTP ${res.status}`);
@@ -95,10 +103,10 @@ async function fromMobileApi(code) {
 }
 
 // Strategy 2: the web app's own API for a post page.
-async function fromWebApi(code) {
+async function fromWebApi(code, env) {
   const res = await fetch(
     `https://www.instagram.com/api/v1/media/shortcode/${code}/info/`,
-    { headers: { ...WEB_HEADERS, "X-IG-App-ID": IG_APP_ID } },
+    { headers: { ...WEB_HEADERS, "X-IG-App-ID": IG_APP_ID, ...authHeaders(env) } },
   );
   if (!res.ok) throw new Error(`web-api: HTTP ${res.status}`);
   const json = await res.json();
@@ -108,7 +116,7 @@ async function fromWebApi(code) {
 }
 
 // Strategy 3: the public GraphQL endpoint.
-async function fromGraphql(code) {
+async function fromGraphql(code, env) {
   const body = new URLSearchParams({
     doc_id: "10015901848480474",
     variables: JSON.stringify({ shortcode: code }),
@@ -119,6 +127,7 @@ async function fromGraphql(code) {
       ...WEB_HEADERS,
       "Content-Type": "application/x-www-form-urlencoded",
       "X-IG-App-ID": IG_APP_ID,
+      ...authHeaders(env),
     },
     body,
   });
@@ -132,10 +141,10 @@ async function fromGraphql(code) {
 }
 
 // Strategy 4: the public embed page, scraped.
-async function fromEmbed(code) {
+async function fromEmbed(code, env) {
   for (const path of ["embed/captioned/", "embed/"]) {
     const res = await fetch(`https://www.instagram.com/reel/${code}/${path}`, {
-      headers: WEB_HEADERS,
+      headers: { ...WEB_HEADERS, ...authHeaders(env) },
     });
     if (!res.ok) continue;
     const html = await res.text();
@@ -154,11 +163,11 @@ const STRATEGIES = [
   ["embed", fromEmbed],
 ];
 
-async function resolve(code) {
+async function resolve(code, env) {
   const errors = [];
   for (const [name, fn] of STRATEGIES) {
     try {
-      const url = await fn(code);
+      const url = await fn(code, env);
       if (url && /^https:\/\//.test(url)) return { url, via: name, errors };
     } catch (e) {
       errors.push(String(e.message || e));
@@ -177,7 +186,7 @@ function json(obj, status = 200) {
 }
 
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
 
     const params = new URL(request.url).searchParams;
@@ -195,13 +204,26 @@ export default {
 
     let hit;
     try {
-      hit = await resolve(code);
+      hit = await resolve(code, env);
     } catch (e) {
-      return json({ error: String(e.message || e), tried: e.details || [] }, 502);
+      return json({
+        error: String(e.message || e),
+        tried: e.details || [],
+        sessionConfigured: Boolean(env && env.IG_SESSIONID),
+        hint: env && env.IG_SESSIONID
+          ? "Session cookie is set but Instagram still refused. It may have expired — paste a fresh sessionid."
+          : "Instagram blocks datacenter addresses. Add an IG_SESSIONID secret (see SETUP-WORKER.md) or use the Shortcut.",
+      }, 502);
     }
 
     if (params.get("debug")) {
-      return json({ ok: true, via: hit.via, videoUrl: hit.url, earlierFailures: hit.errors });
+      return json({
+        ok: true,
+        via: hit.via,
+        videoUrl: hit.url,
+        earlierFailures: hit.errors,
+        sessionConfigured: Boolean(env && env.IG_SESSIONID),
+      });
     }
 
     // Stream the media through, forwarding Range so the player can seek.
