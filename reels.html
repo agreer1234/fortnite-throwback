@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Reel Saver">
+<title>Reel Saver</title>
+<style>
+  :root {
+    --bg: #0e1015; --card: #181b23; --text: #f2f4f8; --muted: #8b93a7;
+    --border: #232733; --err: #ff6b6b; --ok: #3ddc84;
+    --ig1: #feda75; --ig2: #d62976; --ig3: #962fbf; --ig4: #4f5bd5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: radial-gradient(900px 500px at 50% -10%, #1c1a2e 0%, var(--bg) 60%);
+    color: var(--text); min-height: 100vh;
+    padding: calc(44px + env(safe-area-inset-top)) 20px calc(60px + env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; align-items: center;
+  }
+  header { text-align: center; margin-bottom: 26px; }
+  .logo {
+    width: 64px; height: 64px; border-radius: 16px; margin: 0 auto 14px;
+    background: linear-gradient(45deg, var(--ig1), var(--ig2) 45%, var(--ig3) 70%, var(--ig4));
+    display: flex; align-items: center; justify-content: center; font-size: 30px;
+  }
+  h1 { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.5px; }
+  .sub { color: var(--muted); margin-top: 6px; font-size: 0.95rem; }
+
+  .card {
+    width: 100%; max-width: 460px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 18px; padding: 18px;
+  }
+  .row { display: flex; gap: 8px; }
+  input[type="url"] {
+    flex: 1; min-width: 0; background: #10131a; color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 12px; font-size: 16px; outline: none;
+  }
+  input[type="url"]:focus { border-color: var(--ig3); }
+  button {
+    border: none; border-radius: 12px; font-size: 16px; font-weight: 700;
+    padding: 14px 16px; cursor: pointer; color: #fff; -webkit-tap-highlight-color: transparent;
+  }
+  .paste { background: #262b38; }
+  .go {
+    width: 100%; margin-top: 10px;
+    background: linear-gradient(45deg, var(--ig2), var(--ig3), var(--ig4));
+  }
+  button:disabled { opacity: 0.5; }
+
+  .status { margin-top: 14px; font-size: 0.95rem; color: var(--muted); min-height: 1.3em; text-align: center; }
+  .status.err { color: var(--err); }
+  .status.ok { color: var(--ok); }
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 8px;
+    border: 2px solid var(--muted); border-top-color: transparent; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .result { margin-top: 16px; display: none; }
+  .result video {
+    width: 100%; border-radius: 12px; background: #000; max-height: 55vh;
+  }
+  .result .actions { display: flex; gap: 8px; margin-top: 10px; }
+  .result .actions > * { flex: 1; text-align: center; }
+  a.btn {
+    display: block; text-decoration: none; color: #fff; font-weight: 700; font-size: 16px;
+    padding: 14px 16px; border-radius: 12px; background: #262b38;
+  }
+  .save { background: linear-gradient(45deg, #11998e, #38ef7d); color: #06281c !important; }
+
+  footer { margin-top: auto; padding-top: 30px; text-align: center; color: var(--muted); font-size: 0.8rem; max-width: 460px; }
+  footer a { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">🎬</div>
+  <h1>Reel Saver</h1>
+  <div class="sub">Paste an Instagram reel link, get the highest-res video</div>
+</header>
+
+<div class="card">
+  <div class="row">
+    <input id="url" type="url" inputmode="url" autocapitalize="off" autocorrect="off"
+           placeholder="https://www.instagram.com/reel/…">
+    <button class="paste" id="pasteBtn" type="button">Paste</button>
+  </div>
+  <button class="go" id="goBtn" type="button">Get video</button>
+  <div class="status" id="status"></div>
+
+  <div class="result" id="result">
+    <video id="preview" controls playsinline preload="metadata"></video>
+    <div class="actions">
+      <button class="save" id="saveBtn" type="button">Save to Photos</button>
+      <a class="btn" id="openLink" target="_blank" rel="noopener">Open file</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Powered by public <a href="https://cobalt.tools" target="_blank" rel="noopener">cobalt</a> instances.
+  If all instances are busy, use the fallback link that appears above.
+  Only download content you have the rights to save.
+</footer>
+
+<script>
+(() => {
+  // Public cobalt API instances, tried in order. Edit this list if one dies —
+  // current ones are listed at https://instances.cobalt.best
+  const INSTANCES = [
+    "https://cobalt-api.meowing.de",
+    "https://cobalt-api.kwiatekmiki.com",
+    "https://capi.oak.li",
+    "https://cobalt-backend.canine.tools",
+    "https://api.dwnld.page",
+  ];
+
+  const $ = id => document.getElementById(id);
+  const urlInput = $("url"), status = $("status"), result = $("result");
+  const preview = $("preview"), openLink = $("openLink");
+  let currentUrl = null, currentBlob = null, currentName = "reel.mp4";
+
+  function setStatus(msg, cls = "", busy = false) {
+    status.className = "status " + cls;
+    status.innerHTML = (busy ? '<span class="spinner"></span>' : "") + msg;
+  }
+
+  function normalize(raw) {
+    try {
+      const u = new URL(raw.trim());
+      if (!/(^|\.)instagram\.com$/.test(u.hostname)) return null;
+      const m = u.pathname.match(/\/(reel|reels|p|tv)\/([A-Za-z0-9_-]+)/);
+      if (!m) return null;
+      return `https://www.instagram.com/${m[1] === "reels" ? "reel" : m[1]}/${m[2]}/`;
+    } catch { return null; }
+  }
+
+  async function askInstance(base, target) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(base + "/", {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ url: target, videoQuality: "max", filenameStyle: "basic" }),
+      });
+      const data = await res.json();
+      if (data.status === "redirect" || data.status === "tunnel") {
+        return { url: data.url, filename: data.filename || "reel.mp4" };
+      }
+      if (data.status === "picker" && Array.isArray(data.picker)) {
+        const vid = data.picker.find(p => p.type === "video") || data.picker[0];
+        if (vid) return { url: vid.url, filename: "reel.mp4" };
+      }
+      throw new Error(data?.error?.code || "unexpected response");
+    } finally { clearTimeout(timer); }
+  }
+
+  async function go() {
+    const target = normalize(urlInput.value);
+    if (!target) {
+      setStatus("That doesn't look like an Instagram reel/post link.", "err");
+      return;
+    }
+    $("goBtn").disabled = true;
+    result.style.display = "none";
+    currentBlob = null; currentUrl = null;
+
+    let hit = null;
+    for (const base of INSTANCES) {
+      setStatus("Asking " + new URL(base).hostname + "…", "", true);
+      try { hit = await askInstance(base, target); break; }
+      catch { /* try the next instance */ }
+    }
+    $("goBtn").disabled = false;
+
+    if (!hit) {
+      setStatus(
+        'All instances failed. <a style="color:#d67aff" target="_blank" rel="noopener" href="https://cobalt.tools/#'
+        + encodeURIComponent(target) + '">Open in cobalt.tools instead</a>', "err");
+      return;
+    }
+
+    currentUrl = hit.url;
+    currentName = hit.filename.endsWith(".mp4") ? hit.filename : "reel.mp4";
+    openLink.href = currentUrl;
+    preview.src = currentUrl;
+    result.style.display = "block";
+    setStatus("Got it — highest quality available. Preview below.", "ok");
+  }
+
+  async function save() {
+    if (!currentUrl) return;
+    const btn = $("saveBtn");
+    btn.disabled = true;
+    try {
+      if (!currentBlob) {
+        setStatus("Downloading video…", "", true);
+        const res = await fetch(currentUrl);
+        if (!res.ok) throw new Error("fetch failed");
+        currentBlob = await res.blob();
+      }
+      const file = new File([currentBlob], currentName, { type: "video/mp4" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        // iPhone: pick "Save Video" in the share sheet to drop it into Photos
+        await navigator.share({ files: [file] });
+        setStatus("Shared — choose “Save Video” to add it to Photos.", "ok");
+      } else {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(currentBlob);
+        a.download = currentName;
+        a.click();
+        setStatus("Download started.", "ok");
+      }
+    } catch (e) {
+      if (e.name === "AbortError") { setStatus("", ""); }
+      else {
+        // CDN blocked the cross-origin fetch — fall back to opening the file
+        setStatus("Couldn't save directly. Opening the file — long-press the video and choose “Save Video”.", "err");
+        window.open(currentUrl, "_blank");
+      }
+    } finally { btn.disabled = false; }
+  }
+
+  $("goBtn").addEventListener("click", go);
+  $("saveBtn").addEventListener("click", save);
+  urlInput.addEventListener("keydown", e => { if (e.key === "Enter") go(); });
+  $("pasteBtn").addEventListener("click", async () => {
+    try {
+      urlInput.value = await navigator.clipboard.readText();
+      go();
+    } catch { setStatus("Clipboard blocked — paste into the box manually.", "err"); }
+  });
+})();
+</script>
+</body>
+</html>
