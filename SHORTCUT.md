@@ -13,46 +13,45 @@ anywhere.
 
 ## Build it (about five minutes)
 
-Open the **Shortcuts** app → **+** (new shortcut) → **Add Action** for each step
-below. Search the action name in the box, tap it, then set its fields.
+Open the **Shortcuts** app -> **+** (new shortcut) -> **Add Action** for each step
+below. Search the action name in the box, tap it, then fill its fields.
+
+Ten actions in total.
 
 ### 1. Text
 
-Search "Text", add it. Tap the field and insert the **Shortcut Input** variable
-(tap the field, then the variable button above the keyboard → Shortcut Input).
-The whole content of the box should be that one blue variable chip.
+Search "Text", add it. Tap its field, then the variable button above the
+keyboard, and insert **Shortcut Input**. The box should contain just that one
+blue chip.
 
 ### 2. Match Text
 
-- **Text**: the `Text` output from step 1 (usually filled in automatically)
+- **Text**: the `Text` output from step 1 (usually filled in for you)
 - **Regular Expression**:
 
 ```
-/(?:reel|reels|p|tv)/([A-Za-z0-9_-]+)
+instagram.com/(reel|reels|p|tv)/[A-Za-z0-9_-]+
 ```
 
-### 3. Get Group from Matched Text
+This grabs the clean part of the link and drops anything after it, so trailing
+junk like `?utm_source=ig_web_copy_link` does not matter.
 
-- **Get**: change from "All Groups" to **Group at Index**
-- **Index**: `1`
+### 3. Text
 
-This pulls the reel's shortcode out of the link, so query strings like
-`?utm_source=ig_web_copy_link` don't matter.
-
-### 4. Text
-
-Type this, inserting the **Group** variable from step 3 where marked:
+Type the following, and where marked, insert the **Matches** variable from
+step 2:
 
 ```
-https://www.instagram.com/reel/[Group]/embed/captioned/
+https://[Matches]/embed/captioned/
 ```
 
-Type the literal text and drop the variable chip in place of `[Group]`.
+Type `https://` literally, drop in the Matches chip, then type
+`/embed/captioned/` after it.
 
-### 5. Get Contents of URL
+### 4. Get Contents of URL
 
-- **URL**: the `Text` from step 4
-- Tap the **⌄** arrow to expand, set **Method** to `GET`
+- **URL**: the `Text` from step 3
+- Tap the **v** arrow to expand it, leave **Method** as `GET`
 - Under **Headers**, tap **Add new header**:
   - **Key**: `User-Agent`
   - **Text**:
@@ -61,47 +60,47 @@ Type the literal text and drop the variable chip in place of `[Group]`.
 Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36
 ```
 
-The header matters — without it Instagram returns a stripped page with no video
-in it.
+This header is required. Without it Instagram returns a stripped page with no
+video in it.
 
-### 6. Match Text
+### 5. Match Text
 
-- **Text**: the `Contents of URL` from step 5
+- **Text**: the `Contents of URL` from step 4
 - **Regular Expression**:
 
 ```
 "video_url":"(.*?)"
 ```
 
-### 7. Get Group from Matched Text
+### 6. Get Group from Matched Text
 
-- **Get**: **Group at Index**
+- **Get**: change "All Groups" to **Group at Index**
 - **Index**: `1`
 
-### 8. Replace Text
+### 7. Replace Text
 
 - **Find**: `\/`
 - **Replace**: `/`
 - Leave **Regular Expression** off
-- **Text**: the `Group` from step 7
+- **Text**: the `Group` from step 6
 
-### 9. Replace Text
+### 8. Replace Text
 
 - **Find**: `\u0026`
 - **Replace**: `&`
-- **Text**: the `Updated Text` from step 8
+- **Text**: the `Updated Text` from step 7
 
-Steps 8 and 9 undo the JSON escaping Instagram applies to the link.
+Steps 7 and 8 undo the escaping Instagram applies to the link inside its page.
 
-### 10. Get Contents of URL
+### 9. Get Contents of URL
 
-- **URL**: the `Updated Text` from step 9
+- **URL**: the `Updated Text` from step 8
 - No headers needed this time
 
-### 11. Save to Photo Album
+### 10. Save to Photo Album
 
-- **Save**: the `Contents of URL` from step 10
-- **Album**: Recents (or whichever you prefer)
+- **Save**: the `Contents of URL` from step 9
+- **Album**: Recents, or whichever you prefer
 
 ## Turn on the share sheet
 
