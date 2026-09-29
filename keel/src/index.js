@@ -195,7 +195,16 @@ export class KeelStore extends DurableObject {
       season: seasonInfo,
       goals: goals
         .filter((g) => modeOf(g) !== "pause")
-        .map((g) => { const v = score(g.id); return { title: g.title, color: GOAL_COLORS[(g.color ?? 0) % 8], score: v == null ? null : Math.round(v * 100), status: status(v) }; }),
+        .map((g) => {
+          const v = score(g.id);
+          const row = { title: g.title, color: GOAL_COLORS[(g.color ?? 0) % 8], score: v == null ? null : Math.round(v * 100), status: status(v) };
+          // goals with a profit tracker report their running total instead of a habit score
+          if (g.tracker && +g.tracker.target > 0) {
+            const total = (g.tracker.entries || []).reduce((a, e) => a + (+e.sold || 0) - (+e.cost || 0) - (+e.fees || 0), 0);
+            row.tracker = { total: Math.round(total * 100) / 100, target: +g.tracker.target };
+          }
+          return row;
+        }),
     };
   }
 
